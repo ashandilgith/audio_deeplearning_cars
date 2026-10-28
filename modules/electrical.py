@@ -28,7 +28,7 @@ class ElectricalBusMonitor:
             
         if running_v:
             if running_v < cls.THRESHOLDS["charging_low"]:
-                faults.append(f"WARNING: Undercharging ({running_v}V). Stator/Regulator fault.")
+                faults.append(f"WARNING: Undercharging ({running_v}V). Alternator or regulator problem.")
                 status = "ELECTRICAL_WARNING"
             elif running_v > cls.THRESHOLDS["charging_high"]:
                 faults.append(f"CRITICAL: Overcharging ({running_v}V). Regulator blown.")
