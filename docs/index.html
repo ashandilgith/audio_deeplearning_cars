@@ -1,0 +1,872 @@
+<title>Engine Ear</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Learns your car engine's healthy sound on your phone, then tells you when it changes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-column phone tool; a gauge-like status block leads each screen, details below. */
+:root{
+  --bg:#f3f4f2; --panel:#ffffff; --ink:#1b2024; --muted:#5e676d; --line:#d9ddda;
+  --accent:#b8560f; --accent-ink:#ffffff; --accent-soft:#f6e6d8;
+  --ok:#2f7d4f; --ok-soft:#e1f0e6; --warn:#a86a00; --warn-soft:#f8ecd2; --bad:#b3261e; --bad-soft:#f8dedb;
+  --display:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14181b; --panel:#1d2226; --ink:#e9ecea; --muted:#9aa3a8; --line:#30373c;
+  --accent:#e98a3f; --accent-ink:#1b1206; --accent-soft:#3a2716;
+  --ok:#5cc184; --ok-soft:#183324; --warn:#e2ad48; --warn-soft:#3a2d12; --bad:#f07a70; --bad-soft:#3d1c1a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14181b; --panel:#1d2226; --ink:#e9ecea; --muted:#9aa3a8; --line:#30373c;
+  --accent:#e98a3f; --accent-ink:#1b1206; --accent-soft:#3a2716;
+  --ok:#5cc184; --ok-soft:#183324; --warn:#e2ad48; --warn-soft:#3a2d12; --bad:#f07a70; --bad-soft:#3d1c1a; color-scheme:dark}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 40px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.brand svg{width:28px;height:28px}
+h1,h2,h3{font-family:var(--display);font-weight:600;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:28px} h2{font-size:22px} h3{font-size:18px}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 15px var(--body);padding:12px 16px;border-radius:999px;cursor:pointer;min-height:46px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.wide{width:100%}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,.linkbtn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.linkbtn{background:none;border:0;color:var(--accent);font:600 14px var(--body);padding:4px 0;cursor:pointer}
+label.f{display:flex;flex-direction:column;gap:6px;font-weight:500}
+input[type=text],input[type=number],select{font:15px var(--body);padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;box-sizing:border-box}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:380px){.grid2{grid-template-columns:1fr}}
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg label{flex:1 1 140px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;gap:8px;align-items:flex-start;cursor:pointer;background:var(--bg)}
+.seg input{margin-top:4px}
+.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.car{display:flex;gap:12px;align-items:center;justify-content:space-between;cursor:pointer}
+.car .meta{min-width:0}
+.car .name{font-family:var(--display);font-weight:600;font-size:20px;overflow-wrap:anywhere}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.ok{color:var(--ok);background:var(--ok-soft)} .pill.warn{color:var(--warn);background:var(--warn-soft)}
+.pill.bad{color:var(--bad);background:var(--bad-soft)} .pill.none{color:var(--muted);background:var(--bg);border:1px solid var(--line)}
+.verdict{border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line)}
+.verdict.ok{background:var(--ok-soft);border-color:var(--ok)} .verdict.warn{background:var(--warn-soft);border-color:var(--warn)}
+.verdict.bad{background:var(--bad-soft);border-color:var(--bad)} .verdict.none{background:var(--panel)}
+.verdict h1{font-size:30px}
+.verdict.ok h1{color:var(--ok)} .verdict.warn h1{color:var(--warn)} .verdict.bad h1{color:var(--bad)}
+ul.reasons{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.meter{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;font-size:13px}
+.bar{position:relative;height:10px;background:var(--bg);border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:0}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--ok)}
+.bar i.warn{background:var(--warn)} .bar i.bad{background:var(--bad)}
+.bar b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.55}
+.steps{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.steps li{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.steps li.cur{border-color:var(--accent);background:var(--accent-soft)}
+.steps .dots{margin-left:auto;display:flex;gap:4px}
+.steps .dots span{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--muted)}
+.steps .dots span.done{background:var(--ok);border-color:var(--ok)}
+.rec{display:flex;flex-direction:column;align-items:center;gap:14px;padding:8px 0}
+.ring{position:relative;width:180px;height:180px;max-width:100%}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .big{font-family:var(--display);font-size:46px;font-weight:700;line-height:1}
+.lvl{width:100%;height:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.lvl i{display:block;height:100%;width:0;background:var(--accent);transition:width .08s linear}
+.note{border-left:3px solid var(--warn);padding:8px 12px;background:var(--warn-soft);border-radius:0 8px 8px 0;font-size:14px}
+.note.info{border-color:var(--accent);background:var(--accent-soft)}
+.safety{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+table.hist{width:100%;border-collapse:collapse;font-size:14px}
+table.hist td{padding:8px 4px;border-top:1px solid var(--line);vertical-align:middle}
+.tabwrap{overflow-x:auto}
+.empty{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+.gauge-hero{display:flex;gap:16px;align-items:center}
+.gauge-hero svg{flex:0 0 auto;width:92px;height:92px}
+.prog{height:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent);width:0}
+details summary{cursor:pointer;font-weight:600}
+@media (prefers-reduced-motion: reduce){.lvl i{transition:none}}
+</style>
+
+<div class="wrap" id="app" aria-live="polite"></div>
+<input type="file" id="filepick" accept="audio/*" capture hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script>
+"use strict";
+/* =====================================================================
+   Engine Ear: learns a car engine's healthy sound on the phone and flags
+   when it changes. Two detectors run side by side (same design as the
+   Python package in modules/anomaly):
+     A. autoencoder on 5 stacked log-mel frames, conditioned on the state
+     B. "feature check": named sound features vs this car's healthy spread
+   Nothing leaves the phone. Data lives in this browser's storage.
+   ===================================================================== */
+const SR = 16000, WIN = 16000, NFFT = 1024, HOP = 512, NMEL = 64, NSTACK = 5;
+const NFR = Math.floor((WIN - NFFT) / HOP) + 1;           // 30 frames per 1 s window
+const DIN = NMEL * NSTACK;                                 // 320 autoencoder inputs
+const TAKE_S = 15, TAKES = 3;
+const STATES = {
+  idle: {label: "Warm idle", short: "Idle", required: true,
+         how: "Engine warm (after 10+ minutes of driving). Foot off the pedal. AC, fan and headlights off.",
+         rpm: c => [0.6 * c.idleRpm, 1.8 * c.idleRpm]},
+  rev:  {label: "About 2,000 rpm", short: "2,000 rpm", required: false,
+         how: "In Park or Neutral, press the pedal gently and hold the needle steady near 2,000 rpm for the whole recording.",
+         rpm: () => [1300, 3200]},
+  ac:   {label: "Idle with AC on", short: "AC idle", required: false,
+         how: "Warm idle again, with the air-conditioning on full. This loads the engine through the compressor belt.",
+         rpm: c => [0.6 * c.idleRpm, 2.0 * c.idleRpm]},
+};
+const STATE_KEYS = Object.keys(STATES);
+const FEATS = ["band0","band1","band2","band3","band4","band5","band6","band7","centroid","rolloff",
+               "flatness","high","firing","uneven","crest","kurtosis","wander","rpm"];
+const FEAT_FLOOR = {centroid: .05, rolloff: .05, kurtosis: .3, rpm: .4};   // smallest believable spread
+const DB_FLOOR = .75;
+
+/* ---------------------------------------------------------------- storage */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("engineear." + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("engineear." + k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  del(k) { try { localStorage.removeItem("engineear." + k); } catch (e) {} },
+};
+let cars = store.get("cars", []);
+const saveCars = () => store.set("cars", cars);
+const modelOf = id => store.get("model." + id, null);
+const saveModel = (id, m) => store.set("model." + id, m);
+
+/* ---------------------------------------------------------------- DSP */
+const fftPlans = {};
+function plan(n) {
+  if (fftPlans[n]) return fftPlans[n];
+  const lv = Math.round(Math.log2(n)), rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { let r = 0, x = i; for (let j = 0; j < lv; j++) { r = (r << 1) | (x & 1); x >>= 1; } rev[i] = r; }
+  const cs = new Float64Array(n / 2), sn = new Float64Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cs[i] = Math.cos(2 * Math.PI * i / n); sn[i] = Math.sin(2 * Math.PI * i / n); }
+  return (fftPlans[n] = {rev, cs, sn});
+}
+function power(x, n, win) {               // power spectrum (n/2+1) of x (zero-padded / windowed)
+  const {rev, cs, sn} = plan(n), re = new Float64Array(n), im = new Float64Array(n);
+  const L = Math.min(x.length, n);
+  for (let i = 0; i < L; i++) re[rev[i]] = win ? x[i] * win[i] : x[i];
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1, step = n / size;
+    for (let i = 0; i < n; i += size) for (let j = 0, k = 0; j < half; j++, k += step) {
+      const a = i + j, b = a + half;
+      const tr = re[b] * cs[k] + im[b] * sn[k], ti = im[b] * cs[k] - re[b] * sn[k];
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+  const p = new Float64Array(n / 2 + 1);
+  for (let i = 0; i <= n / 2; i++) p[i] = re[i] * re[i] + im[i] * im[i];
+  return p;
+}
+const hannCache = {};
+const hann = n => hannCache[n] || (hannCache[n] = Float64Array.from({length: n}, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))));
+let MELFB = null;
+function melfb() {
+  if (MELFB) return MELFB;
+  const h2m = f => 2595 * Math.log10(1 + f / 700), m2h = m => 700 * (10 ** (m / 2595) - 1);
+  const lo = h2m(50), hi = h2m(8000), pts = [];
+  for (let i = 0; i < NMEL + 2; i++) pts.push(m2h(lo + (hi - lo) * i / (NMEL + 1)));
+  MELFB = [];
+  for (let m = 0; m < NMEL; m++) {
+    const w = [], k0 = Math.floor(pts[m] * NFFT / SR), k1 = Math.ceil(pts[m + 2] * NFFT / SR);
+    for (let k = k0; k <= k1 && k <= NFFT / 2; k++) {
+      const f = k * SR / NFFT, a = (f - pts[m]) / (pts[m + 1] - pts[m]), b = (pts[m + 2] - f) / (pts[m + 2] - pts[m + 1]);
+      const v = Math.max(0, Math.min(a, b)); if (v > 0) w.push([k, v]);
+    }
+    MELFB.push(w);
+  }
+  return MELFB;
+}
+function melWindow(x) {                    // 1 s -> Float32Array(NFR*NMEL) log-mel, window mean removed
+  const fb = melfb(), out = new Float32Array(NFR * NMEL), w = hann(NFFT);
+  let sum = 0;
+  for (let t = 0; t < NFR; t++) {
+    const p = power(x.subarray(t * HOP, t * HOP + NFFT), NFFT, w);
+    for (let m = 0; m < NMEL; m++) {
+      let e = 1e-10; for (const [k, v] of fb[m]) e += p[k] * v;
+      const db = 10 * Math.log10(e); out[t * NMEL + m] = db; sum += db;
+    }
+  }
+  const mean = sum / out.length;
+  for (let i = 0; i < out.length; i++) out[i] -= mean;
+  return out;
+}
+function envelope(x) {                     // |x| averaged in 16-sample blocks -> 1 kHz
+  const n = Math.floor(x.length / 16), e = new Float64Array(n);
+  for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < 16; j++) s += Math.abs(x[i * 16 + j]); e[i] = s / 16; }
+  return e;
+}
+const ENV_SR = 1000, ENV_N = 8192;
+function envSpectrum(env) {
+  let m = 0; for (const v of env) m += v; m /= env.length;
+  const c = Float64Array.from(env, v => v - m);
+  return power(c, ENV_N, hann(c.length));
+}
+const peakNear = (p, hz, rel = .04) => {
+  const lo = Math.max(1, Math.floor(hz * (1 - rel) * ENV_N / ENV_SR)), hi = Math.min(p.length - 1, Math.ceil(hz * (1 + rel) * ENV_N / ENV_SR));
+  let best = 0; for (let k = lo; k <= hi; k++) best = Math.max(best, p[k]); return best;
+};
+const interp = (p, hz) => { const x = hz * ENV_N / ENV_SR, i = Math.floor(x); return i + 1 >= p.length ? 0 : p[i] + (p[i + 1] - p[i]) * (x - i); };
+function estimateRpm(ep, car, state) {     // harmonic sum over the expected firing range
+  const [r0, r1] = STATES[state].rpm(car), k = car.cylinders / 120;
+  const lo = Math.max(4, r0 * k), hi = Math.min(450, r1 * k);
+  let best = -1, bestF = null; const scores = [];
+  for (let f = lo; f <= hi; f += 0.25) {
+    const s = interp(ep, f) + .5 * interp(ep, 2 * f) + .33 * interp(ep, 3 * f);
+    scores.push(s); if (s > best) { best = s; bestF = f; }
+  }
+  scores.sort((a, b) => a - b);
+  const conf = best > 0 ? 1 - scores[scores.length >> 1] / best : 0;
+  return {rpm: bestF ? bestF / k : null, hz: bestF, conf, lo, hi};
+}
+function describe(x, car, state) {         // named features of one 1 s window
+  const p = power(x, 16384, hann(x.length)), df = SR / 16384, o = {};
+  const k0 = Math.ceil(50 / df), k1 = Math.floor(7500 / df);
+  let tot = 0, cen = 0, logs = 0, n = 0, hiE = 0;
+  for (let k = k0; k <= k1; k++) { const v = p[k] + 1e-12; tot += v; cen += v * k * df; logs += Math.log(v); n++; if (k * df >= 3000) hiE += v; }
+  const edges = Array.from({length: 9}, (_, i) => 50 * (7500 / 50) ** (i / 8));
+  for (let b = 0; b < 8; b++) { let e = 1e-12; for (let k = Math.ceil(edges[b] / df); k < edges[b + 1] / df; k++) e += p[k]; o["band" + b] = 10 * Math.log10(e / tot); }
+  o.centroid = Math.log2(cen / tot);
+  let c = 0, ro = k1; for (let k = k0; k <= k1; k++) { c += p[k] + 1e-12; if (c >= .85 * tot) { ro = k; break; } }
+  o.rolloff = Math.log2(ro * df);
+  o.flatness = 10 * Math.log10(Math.exp(logs / n) / (tot / n));
+  o.high = 10 * Math.log10(hiE / tot + 1e-12);
+  const env = envelope(x), ep = envSpectrum(env), est = estimateRpm(ep, car, state);
+  const lo = Math.round(est.lo * ENV_N / ENV_SR), hi = Math.round(est.hi * ENV_N / ENV_SR);
+  const band = Array.from(ep.subarray(lo, hi + 1)).sort((a, b) => a - b), floor = band[band.length >> 1] + 1e-12;
+  const pf = est.hz ? peakNear(ep, est.hz) : 0;
+  let sub = 0; for (let j = 1; j < car.cylinders; j++) sub = Math.max(sub, est.hz ? peakNear(ep, est.hz * j / car.cylinders) : 0);
+  o.firing = 10 * Math.log10(pf / floor + 1e-12);
+  o.uneven = 10 * Math.log10((sub + 1e-12) / (pf + 1e-12));
+  let m = 0, s2 = 0, s4 = 0, mx = 0; for (const v of env) { m += v; mx = Math.max(mx, v); } m /= env.length;
+  for (const v of env) { const d = v - m; s2 += d * d; s4 += d * d * d * d; }
+  const rms = Math.sqrt(s2 / env.length + m * m);
+  o.crest = 20 * Math.log10(mx / (rms + 1e-12) + 1e-12);
+  o.kurtosis = Math.log1p(Math.max(s4 / env.length / ((s2 / env.length) ** 2 + 1e-24) - 1, 0));
+  let slow = 0, all = 1e-12;
+  for (let k = 1; k < ep.length; k++) { const f = k * ENV_SR / ENV_N; if (f > 450) break; if (f >= .5) { all += ep[k]; if (f <= 8) slow += ep[k]; } }
+  o.wander = 10 * Math.log10(slow / all + 1e-12);
+  o.rpm = (est.rpm || 0) / 100;
+  o._rpm = est.rpm; o._conf = est.conf;
+  return o;
+}
+function quality(x) {
+  let s = 0, clip = 0; for (const v of x) { s += v * v; if (Math.abs(v) > .985) clip++; }
+  return {db: 10 * Math.log10(s / x.length + 1e-12), clip: clip / x.length};
+}
+function analyse(samples, car, state) {    // 16 kHz take -> 1 s windows (first/last 0.5 s dropped)
+  const ws = [];
+  for (let s = SR / 2; s + WIN <= samples.length - SR / 4; s += WIN) {
+    const x = samples.subarray(s, s + WIN);
+    ws.push({mel: melWindow(x), f: describe(x, car, state)});
+  }
+  return ws;
+}
+
+/* ---------------------------------------------------------------- audio capture */
+async function toMono16k(buf) {            // AudioBuffer -> Float32Array at 16 kHz mono
+  const len = Math.ceil(buf.duration * SR);
+  const off = new OfflineAudioContext(1, len, SR);
+  const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
+  const out = await off.startRendering();
+  return out.getChannelData(0).slice();
+}
+async function fromFloat(data, rate) {
+  const ctx = new OfflineAudioContext(1, data.length, rate);
+  const b = ctx.createBuffer(1, data.length, rate); b.copyToChannel(data, 0);
+  return toMono16k(b);
+}
+let micBlocked = false;
+async function recordLive(seconds, onTick, onLevel) {
+  const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1}});
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
+  let n = 0; const need = Math.ceil(seconds * ctx.sampleRate);
+  let lock = null; try { lock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+  await new Promise(resolve => {
+    proc.onaudioprocess = e => {
+      const d = e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(d)); n += d.length;
+      let s = 0; for (const v of d) s += v * v; onLevel(Math.sqrt(s / d.length));
+      onTick(Math.min(1, n / need));
+      if (n >= need) resolve();
+    };
+    src.connect(proc); proc.connect(ctx.destination);
+  });
+  proc.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop());
+  try { lock && lock.release(); } catch (e) {}
+  const all = new Float32Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  const rate = ctx.sampleRate; ctx.close();
+  return fromFloat(all, rate);
+}
+function pickFile() {
+  return new Promise((resolve, reject) => {
+    const inp = document.getElementById("filepick");
+    inp.value = "";
+    inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return reject(new Error("No file chosen."));
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const buf = await ctx.decodeAudioData(await f.arrayBuffer()); ctx.close();
+        resolve(await toMono16k(buf));
+      } catch (e) { reject(new Error("That file couldn't be read as audio. Try a .m4a, .mp3 or .wav recording.")); }
+    };
+    inp.click();
+  });
+}
+
+/* ---------------------------------------------------------------- demo engine (synthetic) */
+function rng(seed) { let s = seed >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function synthEngine(state, seconds, seed, fault) {
+  const r = rng(seed), n = Math.round(seconds * SR), y = new Float32Array(n), cyl = 4;
+  const base = {idle: 760, rev: 2000, ac: 800}[state] * (1 + (r() - .5) * .04);
+  for (let i = 0; i < n; i++) y[i] = .012 * (r() * 2 - 1);
+  const burst = Math.round(.016 * SR); let t = 0, k = 0;
+  while (t < seconds) {
+    const rpm = base * (1 + .006 * Math.sin(2 * Math.PI * .4 * t));
+    const skip = (fault === "misfire" && r() < .15);
+    const weak = (fault === "weak" && k % cyl === 0) ? .3 : 1;
+    if (!skip) {
+      const i0 = Math.round(t * SR), a = (.85 + .3 * r()) * weak;
+      for (let j = 0; j < burst && i0 + j < n; j++) {
+        const e = Math.exp(-j / (.0035 * SR));
+        y[i0 + j] += a * e * (.55 * Math.sin(2 * Math.PI * 300 * j / SR) + .25 * Math.sin(2 * Math.PI * 1150 * j / SR) + .3 * (r() * 2 - 1));
+      }
+    } else if (fault === "misfire" && r() < .5) {
+      const i0 = Math.round(t * SR); for (let j = 0; j < 60 && i0 + j < n; j++) y[i0 + j] += 1.4 * Math.exp(-j / 12) * (r() * 2 - 1);
+    }
+    t += 120 / (rpm * cyl); k++;
+  }
+  if (state === "ac") for (let i = 0; i < n; i++) y[i] += .05 * Math.sin(2 * Math.PI * 118 * i / SR);
+  if (fault === "squeal") { const f = 3600 + 600 * r(); for (let i = 0; i < n; i++) y[i] += .07 * Math.sin(2 * Math.PI * f * i / SR + 2 * Math.sin(2 * Math.PI * 4 * i / SR)); }
+  let mx = 0; for (const v of y) mx = Math.max(mx, Math.abs(v)); for (let i = 0; i < n; i++) y[i] *= .5 / mx;
+  return y;
+}
+
+/* ---------------------------------------------------------------- models */
+const hasTF = () => typeof tf !== "undefined";
+const ctxVec = s => STATE_KEYS.map(k => (k === s ? 1 : 0));
+function stackRows(mel, mean, std) {       // window -> rows of NSTACK frames, z-scored per mel band
+  const rows = [];
+  for (let t = 0; t + NSTACK <= NFR; t++) {
+    const r = new Float32Array(DIN);
+    for (let j = 0; j < NSTACK; j++) for (let m = 0; m < NMEL; m++) r[j * NMEL + m] = (mel[(t + j) * NMEL + m] - mean[m]) / std[m];
+    rows.push(r);
+  }
+  return rows;
+}
+function buildAE() {
+  const x = tf.input({shape: [DIN]}), c = tf.input({shape: [STATE_KEYS.length]});
+  let h = tf.layers.concatenate().apply([x, c]);
+  h = tf.layers.dense({units: 64, activation: "relu"}).apply(h);
+  h = tf.layers.dense({units: 32, activation: "relu"}).apply(h);
+  const z = tf.layers.dense({units: 8, activation: "relu"}).apply(h);
+  h = tf.layers.concatenate().apply([z, c]);
+  h = tf.layers.dense({units: 32, activation: "relu"}).apply(h);
+  h = tf.layers.dense({units: 64, activation: "relu"}).apply(h);
+  const out = tf.layers.dense({units: DIN}).apply(h);
+  const m = tf.model({inputs: [x, c], outputs: out});
+  m.compile({optimizer: tf.train.adam(1e-3), loss: "meanSquaredError"});
+  return m;
+}
+const b64 = a => { const u = new Uint8Array(a.buffer); let s = ""; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); };
+const unb64 = s => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Float32Array(u.buffer); };
+const aeCache = {};
+function loadAE(id, model) {
+  if (!hasTF() || !model.ae) return null;
+  if (aeCache[id]?.t === model.trainedAt) return aeCache[id].m;
+  const m = buildAE();
+  m.setWeights(model.ae.map(w => tf.tensor(unb64(w.data), w.shape)));
+  aeCache[id] = {t: model.trainedAt, m};
+  return m;
+}
+function aeScores(m, model, wins, state) { // mean reconstruction error per 1 s window
+  const rows = [], idx = [];
+  wins.forEach((w, i) => stackRows(w.mel, model.mel.mean, model.mel.std).forEach(r => { rows.push(r); idx.push(i); }));
+  if (!rows.length) return [];
+  const X = new Float32Array(rows.length * DIN); rows.forEach((r, i) => X.set(r, i * DIN));
+  const C = new Float32Array(rows.length * STATE_KEYS.length); rows.forEach((_, i) => C.set(ctxVec(state), i * STATE_KEYS.length));
+  const err = tf.tidy(() => {
+    const xt = tf.tensor2d(X, [rows.length, DIN]), ct = tf.tensor2d(C, [rows.length, STATE_KEYS.length]);
+    return m.predict([xt, ct]).sub(xt).square().mean(1).dataSync();
+  });
+  const sum = new Float64Array(wins.length), cnt = new Float64Array(wins.length);
+  idx.forEach((w, i) => { sum[w] += err[i]; cnt[w]++; });
+  return Array.from(sum, (s, i) => s / Math.max(cnt[i], 1));
+}
+const median = a => { const s = [...a].sort((x, y) => x - y), n = s.length; return n ? (n % 2 ? s[n >> 1] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
+const mad = a => { const m = median(a); return 1.4826 * median(a.map(v => Math.abs(v - m))); };
+function featStats(wins) {
+  const st = {};
+  for (const k of FEATS) {
+    const v = wins.map(w => w.f[k]).filter(Number.isFinite);
+    const floor = FEAT_FLOOR[k] ?? DB_FLOOR;
+    st[k] = {m: median(v), s: Math.max(mad(v), floor)};
+  }
+  return st;
+}
+function featZ(stats, w) {
+  const z = {}; let s = 0, n = 0;
+  for (const k of FEATS) { if (k === "rpm" && !(w.f._conf > .4)) continue; const v = (w.f[k] - stats[k].m) / stats[k].s; z[k] = v; s += Math.min(v * v, 100); n++; }
+  return {z, score: s / Math.max(n, 1)};
+}
+function thresholds(scores, relFloor) {    // robust centre + spread of healthy scores
+  const mu = median(scores), sd = Math.max(mad(scores), relFloor * Math.max(mu, 1e-6));
+  return {mu, sd, warn: mu + 2.5 * sd, alarm: mu + 4 * sd, n: scores.length};
+}
+function refreshThresholds(model) {
+  model.thr = {ae: {}, feat: {}};
+  for (const s of Object.keys(model.pool.feat)) {
+    if (model.pool.ae[s]?.length) model.thr.ae[s] = thresholds(model.pool.ae[s], .15);
+    model.thr.feat[s] = thresholds(model.pool.feat[s], .25);
+  }
+}
+async function trainBaseline(car, takes, onProgress) {
+  const model = {v: 1, trainedAt: Date.now(), states: [], mel: null, ae: null, feat: {}, rpm: {}, pool: {ae: {}, feat: {}}, thr: null};
+  const train = {}, calib = {};
+  for (const s of STATE_KEYS) {
+    const t = takes[s]; if (!t || !t.length) continue;
+    model.states.push(s);
+    const wins = t.map(x => analyse(x, car, s));
+    calib[s] = wins[wins.length - 1];
+    train[s] = (wins.length > 1 ? wins.slice(0, -1) : wins).flat();
+    const rp = wins.flat().map(w => w._rpm ?? w.f._rpm).filter(v => v && Number.isFinite(v));
+    model.rpm[s] = {m: median(rp), s: Math.max(mad(rp), 25)};
+  }
+  onProgress(.1, "Measuring the sound");
+  // detector B
+  for (const s of model.states) {
+    const st = featStats(train[s]);
+    model.pool.feat[s] = calib[s].map(w => featZ(st, w).score);
+    model.feat[s] = featStats([...train[s], ...calib[s]]);
+  }
+  // detector A
+  if (hasTF()) {
+    const all = model.states.flatMap(s => train[s]);
+    const mean = new Float32Array(NMEL), std = new Float32Array(NMEL); let n = 0;
+    for (const w of all) for (let t = 0; t < NFR; t++) { n++; for (let m = 0; m < NMEL; m++) mean[m] += w.mel[t * NMEL + m]; }
+    for (let m = 0; m < NMEL; m++) mean[m] /= n;
+    for (const w of all) for (let t = 0; t < NFR; t++) for (let m = 0; m < NMEL; m++) std[m] += (w.mel[t * NMEL + m] - mean[m]) ** 2;
+    for (let m = 0; m < NMEL; m++) std[m] = Math.sqrt(std[m] / n) + .5;
+    model.mel = {mean: Array.from(mean), std: Array.from(std)};
+    const rows = [], cs = [];
+    for (const s of model.states) for (const w of train[s]) for (const r of stackRows(w.mel, mean, std)) { rows.push(r); cs.push(ctxVec(s)); }
+    const X = new Float32Array(rows.length * DIN); rows.forEach((r, i) => X.set(r, i * DIN));
+    const xt = tf.tensor2d(X, [rows.length, DIN]), ct = tf.tensor2d(cs.flat(), [rows.length, STATE_KEYS.length]);
+    const m = buildAE(), EPOCHS = 30;
+    await m.fit([xt, ct], xt, {epochs: EPOCHS, batchSize: 64, shuffle: true,
+      callbacks: {onEpochEnd: async e => { onProgress(.15 + .8 * (e + 1) / EPOCHS, "Learning the healthy sound"); await tf.nextFrame(); }}});
+    xt.dispose(); ct.dispose();
+    for (const s of model.states) model.pool.ae[s] = aeScores(m, model, calib[s], s);
+    model.ae = m.getWeights().map(w => ({shape: w.shape, data: b64(w.dataSync())}));
+    aeCache[car.id] = {t: model.trainedAt, m};
+  }
+  refreshThresholds(model);
+  onProgress(1, "Done");
+  return model;
+}
+
+/* ---------------------------------------------------------------- scoring */
+function levels(scores, thr) { return scores.map(v => (v > thr.alarm ? 2 : v > thr.warn ? 1 : 0)); }
+function verdictOf(lv, scores, thr) {
+  const n = lv.length; if (!n) return "none";
+  const alarms = lv.map(v => v === 2);
+  if (n < 5) { if (alarms.filter(Boolean).length >= Math.ceil(.6 * n)) return "bad"; }
+  else for (let i = 0; i + 5 <= n; i++) if (alarms.slice(i, i + 5).filter(Boolean).length >= 3) return "bad";
+  if (alarms.some(Boolean) || median(scores) > thr.warn) return "warn";
+  return "ok";
+}
+const RANK = {none: -1, ok: 0, retry: 0, warn: 1, bad: 2};
+const worst = vs => vs.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "ok");
+const PHRASES = {
+  high: ["More high-pitched sound: a belt squeal, a pulley or a bearing whine", "Less high-pitched sound than usual. Is the microphone covered?"],
+  band0: ["More deep rumble: exhaust, engine mounts or a heavy load", null], band1: ["More low rumble: exhaust or engine mounts", null],
+  firing: [null, "The engine's beat is less steady than usual (possible misfire)"],
+  uneven: ["The firing pattern is uneven, as if one cylinder is weaker", null],
+  crest: ["More sharp ticks, knocks or pops", null], kurtosis: ["More sharp ticks, knocks or pops", null],
+  wander: ["The idle speed is wandering up and down", null],
+  flatness: ["More hissing sound: a vacuum or exhaust leak, or wind", null],
+  centroid: ["The sound is brighter or harsher overall", "The sound is duller than usual"],
+  band5: ["More mid-to-high mechanical noise: valves, injectors or accessories", null],
+  band6: ["More high mechanical noise: belts, valves or injectors", null],
+};
+function reasonsFor(meanZ, rpmNow, base, state) {
+  const out = [];
+  if (state !== "rev" && rpmNow && base?.m) {
+    const d = rpmNow - base.m;
+    if (Math.abs(d) > Math.max(60, 3 * base.s)) out.push(`Idle speed is ${d > 0 ? "higher" : "lower"} than usual (${Math.round(rpmNow)} vs ${Math.round(base.m)} rpm)`);
+  }
+  const seen = new Set();
+  Object.entries(meanZ).filter(([k, z]) => Math.abs(z) >= 2.5 && k !== "rpm").sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).forEach(([k, z]) => {
+    const ph = PHRASES[k]?.[z > 0 ? 0 : 1]; if (ph && !seen.has(ph) && out.length < 3) { seen.add(ph); out.push(ph); }
+  });
+  return out;
+}
+function scoreState(car, model, state, samples) {
+  const wins = analyse(samples, car, state), q = quality(samples);
+  const res = {state, n: wins.length, quality: q};
+  if (q.db < -62) { res.verdict = "retry"; res.why = "The recording is almost silent. Is the microphone covered, or the phone too far away?"; return res; }
+  if (q.clip > .01) { res.verdict = "retry"; res.why = "The recording is clipping (too loud). Move the phone a little further from the engine."; return res; }
+  const rp = wins.map(w => w.f._rpm).filter(v => v && Number.isFinite(v)), rpmNow = median(rp);
+  res.rpm = rpmNow;
+  if (state === "rev" && model.rpm.rev?.m && Math.abs(rpmNow - model.rpm.rev.m) / model.rpm.rev.m > .25) {
+    res.verdict = "retry"; res.why = `The revs didn't match the healthy recording (about ${Math.round(rpmNow)} vs ${Math.round(model.rpm.rev.m)} rpm). Hold the needle steadier near 2,000 and try again.`; return res;
+  }
+  const fs = wins.map(w => featZ(model.feat[state], w)), fScores = fs.map(x => x.score);
+  const meanZ = {}; for (const k of FEATS) { const v = fs.map(x => x.z[k]).filter(Number.isFinite); if (v.length) meanZ[k] = v.reduce((a, b) => a + b, 0) / v.length; }
+  res.feat = {scores: fScores, thr: model.thr.feat[state], median: median(fScores)};
+  res.feat.verdict = verdictOf(levels(fScores, res.feat.thr), fScores, res.feat.thr);
+  const m = loadAE(car.id, model);
+  if (m && model.thr.ae[state]) {
+    const a = aeScores(m, model, wins, state);
+    res.ae = {scores: a, thr: model.thr.ae[state], median: median(a)};
+    res.ae.verdict = verdictOf(levels(a, res.ae.thr), a, res.ae.thr);
+  }
+  res.reasons = reasonsFor(meanZ, rpmNow, model.rpm[state], state);
+  res.verdict = worst([res.feat.verdict, res.ae?.verdict || "ok"]);
+  if (res.verdict !== "ok" && !res.reasons.length) res.reasons.push("The overall sound pattern changed in a way the simple checks can't name.");
+  return res;
+}
+
+/* ---------------------------------------------------------------- UI helpers */
+const $app = document.getElementById("app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const VERDICT_TEXT = {
+  ok: ["Sounds normal", "Matches this car's healthy sound."],
+  warn: ["Slightly different", "Not alarming yet. Check again in a few days. If it stays different, have it looked at."],
+  bad: ["Sounds different", "This doesn't match the car's healthy sound. Have a mechanic look at it, and mention the points below."],
+  retry: ["Record again", "This recording couldn't be compared fairly."],
+  none: ["No check yet", "Run a check to compare with the healthy sound."],
+};
+const pill = v => `<span class="pill ${v === "retry" ? "none" : v}">${esc(VERDICT_TEXT[v][0])}</span>`;
+const icon = `<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="61 82" stroke-linecap="round" transform="rotate(135 16 16)"/><path d="M16 16 L23 10" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="16" r="2.6" fill="var(--ink)"/></svg>`;
+const header = (back) => `<header class="top"><div class="brand">${icon}Engine Ear</div>${back ? `<button class="linkbtn" data-act="${back}">Back</button>` : ""}</header>`;
+const fmtDate = t => new Date(t).toLocaleString(undefined, {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"});
+const safety = `<div class="safety"><span>Parked on level ground, handbrake on, in Park or Neutral.</span><span>Outdoors or with the garage door open. Exhaust fumes are dangerous.</span><span>Keep hands, phone and cables away from the fan and belts.</span></div>`;
+let view = {name: "home"};
+function go(v) { view = v; render(); window.scrollTo(0, 0); }
+
+/* ---------------------------------------------------------------- views */
+function render() {
+  const v = view;
+  if (v.name === "home") return renderHome();
+  if (v.name === "add") return renderAdd();
+  if (v.name === "car") return renderCar(v.id);
+  if (v.name === "record") return renderRecord();
+  if (v.name === "train") return renderTrain();
+  if (v.name === "result") return renderResult();
+}
+function lastVerdict(c) { return c.history?.length ? c.history[c.history.length - 1].verdict : "none"; }
+function renderHome() {
+  const list = cars.map(c => `
+    <div class="panel car" data-act="open" data-id="${c.id}" role="button" tabindex="0">
+      <div class="meta stack" style="gap:2px"><div class="name">${esc(c.name)}</div>
+        <div class="muted small">${c.cylinders}-cyl ${esc(c.fuel)}${c.demo ? " · synthetic demo" : ""} · ${c.trained ? (c.history?.length ? "checked " + fmtDate(c.history[c.history.length - 1].t) : "baseline ready") : "needs a healthy recording"}</div></div>
+      ${c.trained ? pill(lastVerdict(c)) : `<span class="pill none">Set up</span>`}
+    </div>`).join("");
+  $app.innerHTML = header() + (cars.length ? `
+    <div class="stack"><span class="label">Your cars</span>${list}</div>
+    <div class="row"><button class="btn primary" data-act="add">Add a car</button>${cars.some(c => c.demo) ? "" : `<button class="btn" data-act="demo">Try the demo</button>`}</div>` : `
+    <div class="panel empty">
+      <div class="gauge-hero">${icon.replace('viewBox', 'width="92" height="92" viewBox')}<div class="stack" style="gap:6px"><h1>Know when your engine sounds different</h1></div></div>
+      <p>Engine Ear learns what <b>your</b> car sounds like when it's healthy. Later, a 15-second check tells you whether it still sounds the same, and what changed.</p>
+      <ol class="stack" style="margin:0;padding-left:20px">
+        <li>Record the healthy engine: warm idle, about 2,000 rpm, and idle with AC on. 3 short takes each, about 3 minutes in total.</li>
+        <li>The phone learns that sound. Nothing is uploaded.</li>
+        <li>Check any time, in the same spot. You get "Sounds normal", "Slightly different" or "Sounds different", with the reasons.</li>
+      </ol>
+      <div class="row"><button class="btn primary" data-act="add">Add your car</button><button class="btn" data-act="demo">Try the demo</button></div>
+      <p class="muted small">The demo uses a synthetic engine sound, so you can see how a belt squeal or a misfire shows up before recording your own car.</p>
+    </div>`) + `
+    <p class="muted small">A change in sound is a reason to have the car checked, not a diagnosis. Engine Ear doesn't replace a mechanic or the car's warning lights.</p>`;
+}
+function renderAdd() {
+  $app.innerHTML = header("home") + `
+  <form class="panel" id="addform">
+    <h2>Add a car</h2>
+    <label class="f">Name<input type="text" id="cname" required maxlength="40" placeholder="e.g. Mum's Vios"></label>
+    <div class="grid2">
+      <label class="f">Cylinders<select id="ccyl"><option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option></select></label>
+      <label class="f">Fuel<select id="cfuel"><option value="petrol">Petrol</option><option value="diesel">Diesel</option><option value="hybrid">Hybrid</option></select></label>
+    </div>
+    <label class="f">Usual warm idle (rpm)<input type="number" id="cidle" value="750" min="400" max="1500" step="10" inputmode="numeric"><span class="muted small">Read it off the tachometer when the engine is warm. Most cars sit between 650 and 850.</span></label>
+    <div class="stack"><span class="label">Where will the phone sit?</span>
+      <div class="seg">
+        <label><input type="radio" name="cpos" value="cabin" checked><span><b>Inside, in a dashboard holder</b><br><span class="muted small">Easiest to repeat, and you can hold the revs yourself.</span></span></label>
+        <label><input type="radio" name="cpos" value="hood"><span><b>Hood open, same spot each time</b><br><span class="muted small">Hears belts and valves better. Needs a helper for 2,000 rpm.</span></span></label>
+      </div>
+      <p class="muted small">Always use the same phone, in the same place, with the case on or off as it was. A different spot or a muffled mic can look like a change.</p>
+    </div>
+    <button class="btn primary wide" type="submit">Next: record the healthy sound</button>
+  </form>`;
+  document.getElementById("addform").onsubmit = e => {
+    e.preventDefault();
+    const car = {id: "c" + Date.now().toString(36), name: document.getElementById("cname").value.trim() || "My car",
+      cylinders: +document.getElementById("ccyl").value, fuel: document.getElementById("cfuel").value,
+      idleRpm: Math.min(1500, Math.max(400, +document.getElementById("cidle").value || 750)),
+      position: document.querySelector("input[name=cpos]:checked").value, history: [], trained: false};
+    cars.push(car); saveCars();
+    startBaseline(car);
+  };
+}
+function addDemo() {
+  const car = {id: "demo", name: "Demo car (synthetic sound)", cylinders: 4, fuel: "petrol", idleRpm: 760, position: "cabin", demo: true, history: [], trained: false};
+  cars = cars.filter(c => c.id !== "demo"); cars.push(car); saveCars();
+  startBaseline(car);
+}
+/* ---- recording flow (baseline, check, calibrate) */
+function startBaseline(car) {
+  go({name: "record", mode: "baseline", car, states: STATE_KEYS, takes: {}, si: 0, ti: 0, need: TAKES});
+}
+function startCheck(car, mode) {
+  const model = modelOf(car.id);
+  go({name: "record", mode, car, states: model.states, takes: {}, si: 0, ti: 0, need: 1, pick: model.states.slice()});
+}
+function renderRecord() {
+  const v = view, car = v.car, s = v.states[v.si], S = STATES[s];
+  const titles = {baseline: "Record the healthy sound", check: "Check the engine", calibrate: "Add a healthy recording"};
+  const steps = v.states.map((k, i) => {
+    const done = v.takes[k]?.length || 0;
+    const dots = Array.from({length: v.need}, (_, j) => `<span class="${j < done ? "done" : ""}"></span>`).join("");
+    const skip = v.mode !== "baseline" && v.pick && !v.pick.includes(k);
+    return `<li class="${i === v.si ? "cur" : ""}"><span>${esc(STATES[k].label)}${!STATES[k].required && v.mode === "baseline" ? ` <span class="muted small">(optional)</span>` : ""}${skip ? ` <span class="muted small">(skipped)</span>` : ""}</span><span class="dots">${dots}</span></li>`;
+  }).join("");
+  const demoBtns = car.demo && v.mode === "check" ? `
+    <div class="stack"><span class="label">Demo: choose what the synthetic engine does</span>
+    <div class="row"><button class="btn" data-act="demorec" data-fault="">Healthy</button><button class="btn" data-act="demorec" data-fault="squeal">Belt squeal</button><button class="btn" data-act="demorec" data-fault="misfire">Misfire</button><button class="btn" data-act="demorec" data-fault="weak">Weak cylinder</button></div></div>` : "";
+  const recBtn = car.demo
+    ? (v.mode === "check" ? "" : `<button class="btn primary wide" data-act="demorec" data-fault="">Generate take ${v.ti + 1} of ${v.need}</button>`)
+    : micBlocked
+      ? `<button class="btn primary wide" data-act="rec">Choose a recording for ${esc(S.short)}</button>
+         <p class="muted small">The microphone isn't available on this page. Record ${v.need > 1 ? "at least 45 seconds" : "at least 15 seconds"} with your phone's voice recorder, in the position above, then choose the file. ${v.need > 1 ? "It's split into 3 takes automatically." : ""}</p>`
+      : `<button class="btn primary wide" data-act="rec">Record take ${v.ti + 1} of ${v.need} (${TAKE_S} s)</button>`;
+  const optional = !S.required ? `<button class="btn ghost" data-act="skipstate">Skip this one</button>` : "";
+  $app.innerHTML = header("car-or-home") + `
+  <div class="panel">
+    <span class="label">${esc(car.name)}</span>
+    <h2>${titles[v.mode]}</h2>
+    <ul class="steps">${steps}</ul>
+  </div>
+  <div class="panel">
+    <h3>${esc(S.label)}</h3>
+    <p>${esc(S.how)}</p>
+    <p class="muted small">Phone: ${car.position === "hood" ? "the same spot in the engine bay as always, screen up, away from the fan and belts." : "in its dashboard holder, as always."} Stay quiet, close the doors and windows, and turn off the radio.</p>
+    <div class="rec" id="recbox" hidden>
+      <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="var(--line)" stroke-width="8"/><circle id="ringfg" cx="50" cy="50" r="44" fill="none" stroke="var(--accent)" stroke-width="8" stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke-linecap="round"/></svg>
+        <div class="center"><span class="big mono" id="ringtxt">15</span><span class="muted small">seconds</span></div></div>
+      <div class="lvl" aria-label="Sound level"><i id="lvl"></i></div>
+    </div>
+    <div id="recmsg"></div>
+    ${demoBtns}${recBtn}
+    <div class="row">${optional}</div>
+    ${safety}
+  </div>`;
+}
+async function doRecord(fault) {
+  const v = view, s = v.states[v.si];
+  const msg = document.getElementById("recmsg"), box = document.getElementById("recbox");
+  document.querySelectorAll("[data-act=rec],[data-act=demorec],[data-act=skipstate]").forEach(b => b.disabled = true);
+  let takes = [];
+  try {
+    if (v.car.demo) {
+      takes = [synthEngine(s, TAKE_S + 1, 7919 * (v.si + 1) + 104729 * (v.ti + 1) + (v.mode === "baseline" ? 0 : Date.now() % 100000), fault || null)];
+    } else if (micBlocked) {
+      const x = await pickFile();
+      const need = v.need - v.ti, len = (TAKE_S + 1) * SR;
+      if (x.length < Math.min(len, 11 * SR)) throw new Error("That recording is too short. Record at least 15 seconds.");
+      for (let i = 0; i < need && (i + 1) * len <= x.length + SR; i++) takes.push(x.subarray(i * len, Math.min(x.length, (i + 1) * len)));
+    } else {
+      box.hidden = false;
+      const ring = document.getElementById("ringfg"), txt = document.getElementById("ringtxt"), lvl = document.getElementById("lvl");
+      takes = [await recordLive(TAKE_S + 1, p => { ring.style.strokeDashoffset = 276.5 * (1 - p); txt.textContent = Math.ceil((1 - p) * (TAKE_S + 1)); },
+                                 r => { lvl.style.width = Math.min(100, 100 * Math.sqrt(r) * 2.2) + "%"; })];
+    }
+  } catch (e) {
+    if (!v.car.demo && !micBlocked && (e.name === "NotAllowedError" || e.name === "SecurityError" || e.name === "NotFoundError" || e.name === "TypeError")) {
+      micBlocked = true; render(); return;
+    }
+    msg.innerHTML = `<p class="note">${esc(e.message || "Recording failed. Try again.")}</p>`;
+    document.querySelectorAll("[data-act=rec],[data-act=demorec],[data-act=skipstate]").forEach(b => b.disabled = false);
+    return;
+  }
+  v.takes[s] = (v.takes[s] || []).concat(takes);
+  v.ti = v.takes[s].length;
+  if (v.mode !== "baseline" && v.car.demo) v.fault = fault || "";
+  advance();
+}
+function advance() {
+  const v = view, s = v.states[v.si];
+  if ((v.takes[s]?.length || 0) < v.need) { render(); return; }
+  v.si++; v.ti = 0;
+  if (v.si >= v.states.length) return finishRecording();
+  render();
+}
+function skipState() { const v = view; v.si++; v.ti = 0; if (v.si >= v.states.length) return finishRecording(); render(); }
+async function finishRecording() {
+  const v = view, car = v.car;
+  if (v.mode === "baseline") {
+    if (!v.takes.idle?.length) { v.si = 0; render(); return; }
+    go({name: "train", car, takes: v.takes, p: 0, msg: "Starting"});
+    try {
+      const model = await trainBaseline(car, v.takes, (p, msg) => { const bar = document.getElementById("trainbar"), m = document.getElementById("trainmsg"); if (bar) bar.style.width = (100 * p) + "%"; if (m) m.textContent = msg; });
+      if (!saveModel(car.id, model)) throw new Error("This browser couldn't save the baseline (storage is full or blocked). Free some space or use a normal browser window.");
+      car.trained = true; car.trainedAt = model.trainedAt; car.detectors = model.ae ? 2 : 1; saveCars();
+      go({name: "car", id: car.id, flash: "Baseline saved. Run a check whenever you like, in the same spot and conditions."});
+    } catch (e) { go({name: "car", id: car.id, flash: e.message, flashBad: true}); }
+    return;
+  }
+  const model = modelOf(car.id), states = {};
+  for (const s of v.states) if (v.takes[s]?.length) states[s] = scoreState(car, model, s, v.takes[s][0]);
+  if (v.mode === "calibrate") {
+    let added = 0;
+    for (const [s, r] of Object.entries(states)) if (r.feat) { addToPool(model, s, r); added++; }
+    saveModel(car.id, model);
+    go({name: "car", id: car.id, flash: added ? "Healthy recording added. The alarm levels now include today's sound." : "Nothing was added: the recording couldn't be compared. Try again."});
+    return;
+  }
+  const verdict = worst(Object.values(states).map(r => r.verdict));
+  const entry = {t: Date.now(), verdict, demoFault: v.fault, states: Object.fromEntries(Object.entries(states).map(([s, r]) => [s, {
+    verdict: r.verdict, why: r.why || null, reasons: r.reasons || [], rpm: r.rpm ? Math.round(r.rpm) : null,
+    feat: r.feat ? {scores: r.feat.scores.map(x => +x.toFixed(3)), median: +r.feat.median.toFixed(3)} : null,
+    ae: r.ae ? {scores: r.ae.scores.map(x => +x.toFixed(4)), median: +r.ae.median.toFixed(4)} : null}]))};
+  car.history = (car.history || []).concat(entry).slice(-50); saveCars();
+  go({name: "result", id: car.id, at: entry.t});
+}
+function addToPool(model, s, r) {
+  const cap = a => a.slice(-300);
+  if (r.feat) model.pool.feat[s] = cap((model.pool.feat[s] || []).concat(r.feat.scores));
+  if (r.ae) model.pool.ae[s] = cap((model.pool.ae[s] || []).concat(r.ae.scores));
+  refreshThresholds(model);
+}
+function renderTrain() {
+  const v = view;
+  $app.innerHTML = header() + `
+  <div class="panel"><span class="label">${esc(v.car.name)}</span><h2>Learning the healthy sound</h2>
+    <div class="prog"><i id="trainbar"></i></div><p class="muted" id="trainmsg">Starting</p>
+    <p class="muted small">This takes under a minute on most phones. Keep this page open.</p>
+    ${hasTF() ? "" : `<p class="note">The learning library didn't load (no internet?). Only the feature check will be used. Re-record the baseline later for the full check.</p>`}
+  </div>`;
+}
+function meterRow(name, d) {
+  if (!d || !d.thr) return "";
+  const max = Math.max(d.thr.alarm * 1.35, d.median * 1.1), pct = v => Math.min(100, 100 * v / max);
+  const cls = d.median > d.thr.alarm ? "bad" : d.median > d.thr.warn ? "warn" : "";
+  return `<span>${name}</span><div class="bar" role="img" aria-label="${name}: ${d.median.toFixed(2)}, warning at ${d.thr.warn.toFixed(2)}"><i class="${cls}" style="width:${pct(d.median)}%"></i><b style="left:${pct(d.thr.warn)}%"></b><b style="left:${pct(d.thr.alarm)}%"></b></div><span class="mono muted">${(d.median / d.thr.warn).toFixed(2)}×</span>`;
+}
+function renderResult() {
+  const car = cars.find(c => c.id === view.id), e = car.history.find(h => h.t === view.at), model = modelOf(car.id);
+  const [h, sub] = VERDICT_TEXT[e.verdict];
+  const blocks = Object.entries(e.states).map(([s, r]) => {
+    const feat = r.feat && {median: r.feat.median, thr: model.thr.feat[s]}, ae = r.ae && {median: r.ae.median, thr: model.thr.ae[s]};
+    return `<div class="panel"><div class="row" style="justify-content:space-between"><h3>${esc(STATES[s].label)}</h3>${pill(r.verdict)}</div>
+      ${r.why ? `<p class="note">${esc(r.why)}</p>` : ""}
+      ${r.reasons.length ? `<ul class="reasons">${r.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : (r.verdict === "ok" ? `<p class="muted">No differences stood out.</p>` : "")}
+      ${r.rpm ? `<p class="muted small">Estimated engine speed from the sound: <span class="mono">${r.rpm}</span> rpm${model.rpm[s]?.m ? ` (healthy: <span class="mono">${Math.round(model.rpm[s].m)}</span>)` : ""}</p>` : ""}
+      ${feat || ae ? `<details><summary>Detector scores</summary><div class="meter" style="margin-top:10px">${meterRow("Sound pattern", ae)}${meterRow("Feature check", feat)}</div>
+      <p class="muted small" style="margin-top:8px">Bars show the median score against this car's warning level (first mark) and alarm level (second mark). 1.00× is the warning level.</p></details>` : ""}
+    </div>`;
+  }).join("");
+  $app.innerHTML = header("car") + `
+  <div class="verdict ${e.verdict === "retry" ? "none" : e.verdict}"><span class="label">${esc(car.name)} · ${fmtDate(e.t)}${e.demoFault !== undefined && car.demo ? ` · demo: ${esc(e.demoFault || "healthy")}` : ""}</span><h1>${esc(h)}</h1><p>${esc(sub)}</p></div>
+  ${blocks}
+  <div class="row">${e.verdict !== "ok" && e.verdict !== "retry" && !e.markedNormal ? `<button class="btn" data-act="marknormal">It's fine, mark as normal</button>` : ""}<button class="btn primary" data-act="car">Done</button></div>
+  ${e.markedNormal ? `<p class="muted small">You marked this check as normal. Its sound now counts as healthy when setting the alarm levels.</p>` : `<p class="muted small">If a mechanic confirms nothing is wrong, mark it as normal. Engine Ear then widens its idea of "healthy" a little.</p>`}`;
+}
+function markNormal() {
+  const car = cars.find(c => c.id === view.id), e = car.history.find(h => h.t === view.at), model = modelOf(car.id);
+  for (const [s, r] of Object.entries(e.states)) if (r.feat) addToPool(model, s, {feat: {scores: r.feat.scores}, ae: r.ae ? {scores: r.ae.scores} : null});
+  e.markedNormal = true; saveModel(car.id, model); saveCars(); render();
+}
+function renderCar(id) {
+  const car = cars.find(c => c.id === id); if (!car) return go({name: "home"});
+  const model = car.trained ? modelOf(id) : null;
+  if (car.trained && !model) { car.trained = false; saveCars(); }
+  const v = lastVerdict(car), last = car.history?.[car.history.length - 1];
+  const hist = (car.history || []).slice().reverse().map(h => `<tr data-act="openresult" data-at="${h.t}" style="cursor:pointer"><td class="mono" style="white-space:nowrap">${fmtDate(h.t)}</td><td class="small muted">${Object.keys(h.states).map(s => STATES[s].short).join(", ")}${h.markedNormal ? ` <span class="muted small">(marked normal)</span>` : ""}</td><td style="text-align:right">${pill(h.verdict)}</td></tr>`).join("");
+  const nCal = model ? Math.max(...Object.values(model.pool.feat).map(a => a.length)) : 0;
+  $app.innerHTML = header("home") + `
+  ${view.flash ? `<p class="note ${view.flashBad ? "" : "info"}">${esc(view.flash)}</p>` : ""}
+  <div class="verdict ${model ? (v === "retry" ? "none" : v) : "none"}">
+    <span class="label">${esc(car.name)} · ${car.cylinders}-cyl ${esc(car.fuel)} · idle ${car.idleRpm} rpm</span>
+    <h1>${model ? esc(VERDICT_TEXT[v][0]) : "Needs a healthy recording"}</h1>
+    <p>${model ? (last ? "Last check " + fmtDate(last.t) + "." : "Baseline ready. Run your first check.") : "Record the engine while it's healthy, so later checks have something to compare with."}</p>
+  </div>
+  ${model ? `<div class="row"><button class="btn primary" data-act="check">Run a check</button><button class="btn" data-act="calibrate">Add a healthy recording</button></div>
+    <p class="muted small">Tip: on another day, while the car is still fine, tap <b>Add a healthy recording</b> once. Alarm levels set from two different days give far fewer false alarms.</p>` :
+    `<button class="btn primary wide" data-act="baseline">Record the healthy sound</button>`}
+  ${hist ? `<div class="panel"><h3>Checks</h3><div class="tabwrap"><table class="hist">${hist}</table></div></div>` : ""}
+  ${model ? `<div class="panel"><h3>Baseline</h3>
+    <p class="small">Recorded ${fmtDate(model.trainedAt)}: ${model.states.map(s => STATES[s].label).join(", ")}. Detectors: ${model.ae ? "sound pattern + feature check" : "feature check only"}. Healthy windows behind the alarm levels: <span class="mono">${nCal}</span>.</p>
+    <div class="row"><button class="btn" data-act="baseline">Re-record baseline</button><button class="btn" data-act="export">Save a backup file</button><button class="btn" data-act="import">Restore from backup</button></div>
+    <p class="muted small">Re-record after a repair or service that changes the sound (new belt, new exhaust), or if you change phone or phone position.</p></div>` : ""}
+  <div class="row"><button class="btn danger" data-act="delete" id="delbtn">Delete this car</button></div>`;
+}
+/* ---- backup */
+async function exportCar(id) {
+  const car = cars.find(c => c.id === id), data = JSON.stringify({app: "engine-ear", v: 1, car, model: modelOf(id)});
+  const name = `engine-ear-${car.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`;
+  try {
+    const dl = window.claude?.use ? await window.claude.use("downloads") : null;
+    if (dl) { await dl.save({filename: name, data}); return; }
+  } catch (e) { /* fall through to a normal download */ }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([data], {type: "application/json"})); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function importCar() {
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json,.json";
+  inp.onchange = async () => {
+    try {
+      const d = JSON.parse(await inp.files[0].text());
+      if (d.app !== "engine-ear" || !d.car || !d.model) throw new Error();
+      cars = cars.filter(c => c.id !== d.car.id); cars.push(d.car); saveCars(); saveModel(d.car.id, d.model);
+      delete aeCache[d.car.id];
+      go({name: "car", id: d.car.id, flash: "Restored from backup."});
+    } catch (e) { go({name: view.name, id: view.id, flash: "That file isn't an Engine Ear backup.", flashBad: true}); }
+  };
+  inp.click();
+}
+
+/* ---------------------------------------------------------------- events */
+$app.addEventListener("click", e => {
+  const t = e.target.closest("[data-act]"); if (!t || t.disabled) return;
+  const a = t.dataset.act, car = view.car || cars.find(c => c.id === view.id);
+  if (a === "home") go({name: "home"});
+  else if (a === "add") go({name: "add"});
+  else if (a === "demo") addDemo();
+  else if (a === "open") go({name: "car", id: t.dataset.id});
+  else if (a === "car") go({name: "car", id: car.id});
+  else if (a === "car-or-home") go(car?.trained ? {name: "car", id: car.id} : {name: "home"});
+  else if (a === "baseline") startBaseline(car);
+  else if (a === "check") startCheck(car, "check");
+  else if (a === "calibrate") startCheck(car, "calibrate");
+  else if (a === "rec") doRecord();
+  else if (a === "demorec") doRecord(t.dataset.fault);
+  else if (a === "skipstate") skipState();
+  else if (a === "marknormal") markNormal();
+  else if (a === "openresult") go({name: "result", id: car.id, at: +t.dataset.at});
+  else if (a === "export") exportCar(car.id);
+  else if (a === "import") importCar();
+  else if (a === "delete") {
+    if (t.dataset.armed) { cars = cars.filter(c => c.id !== car.id); saveCars(); store.del("model." + car.id); delete aeCache[car.id]; go({name: "home"}); }
+    else { t.dataset.armed = "1"; t.textContent = "Tap again to delete " + car.name + " and its baseline"; }
+  }
+});
+$app.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches("[role=button]")) { e.preventDefault(); e.target.click(); } });
+if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) micBlocked = true;
+if (hasTF()) { tf.setBackend("webgl").catch(() => tf.setBackend("cpu")); }
+render();
+window.EngineEar = {synthEngine, analyse, scoreState, trainBaseline, describe};   // for tests
+</script>

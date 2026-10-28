@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+node_modules/
+tests/out/
+models/anomaly/*/
+!models/anomaly/.gitkeep
+recordings/
