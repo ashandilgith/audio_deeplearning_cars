@@ -568,7 +568,14 @@ function f16to32(u16) {
   return out;
 }
 async function loadYamnet() {
-  const [man, bin] = await Promise.all([fetch("models/yamnet.json").then(r => r.json()), fetch("models/yamnet.bin").then(r => r.arrayBuffer())]);
+  const man = await fetch("models/yamnet.json").then(r => r.json());
+  let bin = await fetch("models/yamnet.bin").then(r => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
+  if (!bin) {                               // hosts that only serve text: base64 copy of the same weights
+    const txt = await fetch("models/yamnet.b64.txt").then(r => r.text());
+    const raw = atob(txt.trim()), u = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+    bin = u.buffer;
+  }
   const all = f16to32(new Uint16Array(bin)), W = {};
   for (const t of man.tensors) {
     const a = all.subarray(t.offset, t.offset + t.length);
