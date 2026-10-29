@@ -6,3 +6,5 @@ tests/out/
 models/anomaly/*/
 !models/anomaly/.gitkeep
 recordings/
+data/raw_audio/
+data/car_windows.npz

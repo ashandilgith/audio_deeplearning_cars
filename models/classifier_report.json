@@ -1,0 +1,138 @@
+{
+ "model": "YAMNet embeddings + MLP head",
+ "seeds": [
+  7,
+  8,
+  9
+ ],
+ "classes": [
+  "normal",
+  "belt_squeal",
+  "engine_knock",
+  "valve_tick",
+  "rough_idle",
+  "exhaust_leak",
+  "startup_rattle",
+  "accessory_whine",
+  "trouble_starting"
+ ],
+ "balanced_accuracy": 0.226,
+ "top3_accuracy": 0.598,
+ "fault_vs_normal_accuracy": 0.725,
+ "video_accuracy": 0.257,
+ "chance_balanced": 0.111,
+ "per_class_recall": {
+  "normal": 0.318,
+  "belt_squeal": 0.271,
+  "engine_knock": 0.15,
+  "valve_tick": 0.121,
+  "rough_idle": 0.175,
+  "exhaust_leak": 0.371,
+  "startup_rattle": 0.105,
+  "accessory_whine": 0.292,
+  "trouble_starting": 0.228
+ },
+ "confusion_summed_over_seeds": [
+  [
+   286,
+   22,
+   136,
+   69,
+   29,
+   133,
+   179,
+   21,
+   25
+  ],
+  [
+   27,
+   69,
+   16,
+   30,
+   27,
+   14,
+   10,
+   52,
+   10
+  ],
+  [
+   86,
+   47,
+   88,
+   82,
+   79,
+   78,
+   66,
+   41,
+   18
+  ],
+  [
+   38,
+   33,
+   31,
+   33,
+   30,
+   16,
+   39,
+   41,
+   12
+  ],
+  [
+   51,
+   30,
+   6,
+   26,
+   53,
+   101,
+   4,
+   28,
+   4
+  ],
+  [
+   122,
+   24,
+   54,
+   20,
+   52,
+   207,
+   25,
+   25,
+   29
+  ],
+  [
+   33,
+   34,
+   35,
+   32,
+   26,
+   18,
+   28,
+   44,
+   17
+  ],
+  [
+   7,
+   43,
+   22,
+   36,
+   47,
+   14,
+   21,
+   92,
+   33
+  ],
+  [
+   2,
+   28,
+   0,
+   15,
+   15,
+   7,
+   13,
+   8,
+   26
+  ]
+ ],
+ "windows": 5934,
+ "videos": 224
+}

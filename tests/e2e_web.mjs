@@ -11,6 +11,7 @@ import { chromium } from "playwright";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import http from "node:http";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -23,7 +24,15 @@ const errors = [];
 page.on("pageerror", e => errors.push(String(e)));
 if (tfjs) await page.route("https://cdn.jsdelivr.net/npm/@tensorflow/**", r => r.fulfill({ path: tfjs, contentType: "application/javascript" }));
 await page.route("https://fonts.googleapis.com/**", r => r.fulfill({ body: "", contentType: "text/css" }));
-await page.goto("file://" + path.join(here, "..", "docs", "index.html"));
+// serve docs/ over http so the app can fetch its model files
+const docs = path.join(here, "..", "docs");
+const types = { ".html": "text/html", ".json": "application/json", ".bin": "application/octet-stream" };
+const server = http.createServer((req, res) => {
+  const f = path.join(docs, decodeURIComponent(req.url.split("?")[0]).replace(/^\/$/, "/index.html"));
+  if (!f.startsWith(docs) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
+  res.writeHead(200, { "Content-Type": types[path.extname(f)] || "application/octet-stream" }); fs.createReadStream(f).pipe(res);
+}).listen(0);
+await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
 
 const click = async sel => { await page.locator(sel).first().click(); await page.waitForTimeout(30); };
 await click("[data-act=demo]");
@@ -37,7 +46,7 @@ async function check(fault) {
   const r = await page.evaluate(() => {
     const cars = JSON.parse(localStorage.getItem("engineear.cars"));
     const h = cars.find(c => c.id === "demo").history.at(-1);
-    return { verdict: h.verdict, states: Object.fromEntries(Object.entries(h.states).map(([s, v]) => [s, v.verdict])),
+    return { verdict: h.verdict, likely: (h.likely || []).map(c => `${c.cls} ${Math.round(100 * c.p)}%`).join(", "), states: Object.fromEntries(Object.entries(h.states).map(([s, v]) => [s, v.verdict])),
              reasons: [...new Set(Object.values(h.states).flatMap(v => v.reasons))] };
   });
   await click("[data-act=car]");
@@ -51,13 +60,16 @@ for (const fault of ["", "squeal", "misfire", "weak"]) {
 fs.mkdirSync(path.join(here, "..", "tests", "out"), { recursive: true });
 await page.screenshot({ path: path.join(here, "out", "car.png"), fullPage: true });
 await browser.close();
+server.close();
 
 let bad = 0;
 for (const [k, rs] of Object.entries(results)) {
-  console.log(k.padEnd(8), rs.map(r => r.verdict).join(" "), "|", rs[0].reasons.join("; "));
+  console.log(k.padEnd(8), rs.map(r => r.verdict).join(" "), "|", rs[0].reasons.join("; "), "| likely:", rs[0].likely);
   const flagged = rs.filter(r => r.verdict === "bad" || r.verdict === "warn").length;
   if (k === "healthy" && rs.filter(r => r.verdict === "bad").length > runs / 2) bad++;
   if (k !== "healthy" && flagged < runs / 2) bad++;
 }
+const noLikely = Object.values(results).flat().filter(r => !r.likely).length;
+if (noLikely) { console.log("checks without a classifier result:", noLikely); bad++; }
 if (errors.length) { console.log("page errors:", errors); bad++; }
 process.exit(bad ? 1 : 0);

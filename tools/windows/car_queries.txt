@@ -1,0 +1,29 @@
+normal|car engine idle sound
+normal|healthy engine sound idle
+normal|4 cylinder engine idling sound
+normal|car engine start and idle sound normal
+normal|v6 engine idle sound healthy
+belt_squeal|serpentine belt squeal sound
+belt_squeal|car belt squeal on startup
+belt_squeal|squealing belt noise engine
+engine_knock|rod knock sound
+engine_knock|engine knocking sound car
+engine_knock|spun rod bearing knock idle
+valve_tick|lifter tick sound
+valve_tick|valve tick sound engine
+valve_tick|hydraulic lifter ticking noise
+rough_idle|engine misfire sound idle
+rough_idle|rough idle sound car misfire
+rough_idle|car engine shaking misfire cylinder sound
+exhaust_leak|exhaust manifold leak sound
+exhaust_leak|exhaust leak ticking sound
+exhaust_leak|cracked exhaust manifold sound
+startup_rattle|timing chain rattle cold start
+startup_rattle|timing chain tensioner rattle sound
+startup_rattle|engine rattle on startup
+accessory_whine|alternator bearing noise
+accessory_whine|power steering pump whine sound
+accessory_whine|idler pulley bearing noise
+trouble_starting|car clicking won't start sound
+trouble_starting|bad starter sound
+trouble_starting|car cranks but won't start sound

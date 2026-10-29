@@ -272,7 +272,7 @@ function analyse(samples, car, state) {    // 16 kHz take -> 1 s windows (first/
   const ws = [];
   for (let s = SR / 2; s + WIN <= samples.length - SR / 4; s += WIN) {
     const x = samples.subarray(s, s + WIN);
-    ws.push({mel: melWindow(x), f: describe(x, car, state)});
+    ws.push({mel: melWindow(x), f: describe(x, car, state), x});
   }
   return ws;
 }
@@ -536,9 +536,93 @@ function scoreState(car, model, state, samples) {
     res.ae.verdict = verdictOf(levels(a, res.ae.thr), a, res.ae.thr);
   }
   res.reasons = reasonsFor(meanZ, rpmNow, model.rpm[state], state);
+  res.wins = wins;
   res.verdict = worst([res.feat.verdict, res.ae?.verdict || "ok"]);
   if (res.verdict !== "ok" && !res.reasons.length) res.reasons.push("The overall sound pattern changed in a way the simple checks can't name.");
   return res;
+}
+
+/* ---------------------------------------------------------------- fault classifier (trained on YouTube) */
+const FAULT_INFO = {
+  normal: "Steady, even sound with no squeal, knock or tick standing out.",
+  belt_squeal: "A high squeal or chirp from the drive belt, often worst on cold starts or with the AC on. Usually a worn or loose belt or a tensioner. Cheap to fix, but a snapped belt can stop the engine.",
+  engine_knock: "A deep, heavy knock that follows engine speed. Often a worn rod or crank bearing. Serious: stop driving hard and have it checked soon.",
+  valve_tick: "A light, fast ticking from the top of the engine. Often a lifter or valve clearance issue, sometimes low oil. Check the oil level first.",
+  rough_idle: "Uneven, shaking or stumbling idle. Usually a misfire (spark plug, coil, injector) or an air leak. A flashing check-engine light means stop and get it checked.",
+  exhaust_leak: "A puffing or ticking that's loudest from cold, from the exhaust manifold or pipes. Fumes can enter the cabin, so don't ignore it.",
+  startup_rattle: "A rattle for the first seconds after a start, then it fades. Often a timing chain or tensioner. Getting worse means it needs a mechanic soon.",
+  accessory_whine: "A steady whine that rises with engine speed: alternator, power-steering pump, or an idler/tensioner pulley bearing.",
+  trouble_starting: "Clicking, grinding or slow cranking when starting. Often a weak battery, poor connection or a failing starter.",
+};
+/* YAMNet (Google, AudioSet-pretrained) rebuilt with tf.js ops from docs/models/yamnet.bin:
+   0.975 s at 16 kHz -> 96x64 log-mel -> MobileNet (27 convs) -> 1024-d embedding.
+   A small head trained on YouTube car-fault clips (tools/train_yamnet_head.py) maps it to faults. */
+const YN = 15600, YSTRIDES = [1, 2, 1, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1];
+let YAM = null, CLF = null, clfLoading = null;
+function f16to32(u16) {
+  const out = new Float32Array(u16.length);
+  for (let i = 0; i < u16.length; i++) {
+    const h = u16[i], s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023;
+    out[i] = e === 0 ? s * 5.960464477539063e-8 * f : e === 31 ? (f ? NaN : s * Infinity) : s * 2 ** (e - 15) * (1 + f / 1024);
+  }
+  return out;
+}
+async function loadYamnet() {
+  const [man, bin] = await Promise.all([fetch("models/yamnet.json").then(r => r.json()), fetch("models/yamnet.bin").then(r => r.arrayBuffer())]);
+  const all = f16to32(new Uint16Array(bin)), W = {};
+  for (const t of man.tensors) {
+    const a = all.subarray(t.offset, t.offset + t.length);
+    W[t.name] = t.name === "window" ? Float32Array.from(a) : tf.tensor(a, t.shape);
+  }
+  return W;
+}
+function yamnetEmbed(windows) {            // array of Float32Array(>=15600) -> tensor [n,1024]
+  const n = windows.length, F = new Float32Array(n * 96 * 512), win = YAM.window;
+  windows.forEach((w, i) => {               // 25 ms Hann frames every 10 ms, zero-padded to 512
+    for (let t = 0; t < 96; t++) for (let j = 0; j < 400; j++) F[(i * 96 + t) * 512 + j] = (w[t * 160 + j] || 0) * win[j];
+  });
+  return tf.tidy(() => {
+    const fr = tf.tensor2d(F, [n * 96, 512]);   // the model's own DFT matrices, then mel and log
+    const mag = fr.matMul(YAM.dft_re).square().add(fr.matMul(YAM.dft_im).square()).sqrt();
+    let h = mag.matMul(YAM.mel).add(0.001).log().reshape([n, 96, 64, 1]);
+    h = tf.relu(tf.conv2d(h, YAM.l0_conv_w, 2, "same").add(YAM.l0_b));
+    for (let i = 0; i < 13; i++) {
+      h = tf.relu(tf.depthwiseConv2d(h, YAM[`l${1 + 2 * i}_dw_w`], YSTRIDES[i], "same").add(YAM[`l${1 + 2 * i}_b`]));
+      h = tf.relu(tf.conv2d(h, YAM[`l${2 + 2 * i}_conv_w`], 1, "same").add(YAM[`l${2 + 2 * i}_b`]));
+    }
+    return h.mean([1, 2]);
+  });
+}
+async function loadClassifier() {
+  if (CLF || !hasTF()) return CLF;
+  if (!clfLoading) clfLoading = (async () => {
+    try {
+      const r = await fetch("models/fault_classifier.json"); if (!r.ok) return null;
+      const d = await r.json();
+      YAM = await loadYamnet();
+      const t = w => tf.tensor(unb64(w.data), w.shape);
+      CLF = {...d, W: d.weights.map(t), mu: tf.tensor(d.mean), sd: tf.tensor(d.std)};
+    } catch (e) { console.warn("classifier unavailable", e); CLF = null; }
+    return CLF;
+  })();
+  return clfLoading;
+}
+function classify(wins) {                  // average class probabilities over 1 s windows
+  if (!CLF || !wins.length) return null;
+  const p = tf.tidy(() => {
+    const e = yamnetEmbed(wins.map(w => w.x)).sub(CLF.mu).div(CLF.sd);
+    const h = tf.relu(e.matMul(CLF.W[0]).add(CLF.W[1]));
+    return tf.softmax(h.matMul(CLF.W[2]).add(CLF.W[3])).mean(0).dataSync();
+  });
+  return Array.from(p).map((v, i) => ({cls: CLF.classes[i], label: CLF.labels[i], p: v})).sort((a, b) => b.p - a.p);
+}
+function likelyHtml(top, verdict) {
+  if (!top) return "";
+  const t3 = top.slice(0, 3), r = CLF?.report;
+  return `<div class="panel"><h3>${verdict === "ok" ? "What the sound is closest to" : "What it sounds most like"}</h3>
+    <div class="meter">${t3.map(c => `<span>${esc(c.label)}</span><div class="bar"><i style="width:${(100 * c.p).toFixed(0)}%;background:var(--accent)"></i></div><span class="mono muted">${(100 * c.p).toFixed(0)}%</span>`).join("")}</div>
+    ${t3[0].cls !== "normal" ? `<p class="small">${esc(FAULT_INFO[t3[0].cls] || "")}</p>` : ""}
+    <p class="muted small">Learned from YouTube recordings of these faults${r ? `. On videos it hadn't heard, the right answer was in its top 3 about ${Math.round(100 * r.top3_accuracy)}% of the time` : ""}. Treat it as a hint for the mechanic, not a diagnosis.</p></div>`;
 }
 
 /* ---------------------------------------------------------------- UI helpers */
@@ -568,6 +652,7 @@ function render() {
   if (v.name === "record") return renderRecord();
   if (v.name === "train") return renderTrain();
   if (v.name === "result") return renderResult();
+  if (v.name === "identify") return renderIdentify();
 }
 function lastVerdict(c) { return c.history?.length ? c.history[c.history.length - 1].verdict : "none"; }
 function renderHome() {
@@ -579,7 +664,7 @@ function renderHome() {
     </div>`).join("");
   $app.innerHTML = header() + (cars.length ? `
     <div class="stack"><span class="label">Your cars</span>${list}</div>
-    <div class="row"><button class="btn primary" data-act="add">Add a car</button>${cars.some(c => c.demo) ? "" : `<button class="btn" data-act="demo">Try the demo</button>`}</div>` : `
+    <div class="row"><button class="btn primary" data-act="add">Add a car</button><button class="btn" data-act="identify">What's that noise?</button>${cars.some(c => c.demo) ? "" : `<button class="btn" data-act="demo">Try the demo</button>`}</div>` : `
     <div class="panel empty">
       <div class="gauge-hero">${icon.replace('viewBox', 'width="92" height="92" viewBox')}<div class="stack" style="gap:6px"><h1>Know when your engine sounds different</h1></div></div>
       <p>Engine Ear learns what <b>your</b> car sounds like when it's healthy. Later, a 15-second check tells you whether it still sounds the same, and what changed.</p>
@@ -588,7 +673,8 @@ function renderHome() {
         <li>The phone learns that sound. Nothing is uploaded.</li>
         <li>Check any time, in the same spot. You get "Sounds normal", "Slightly different" or "Sounds different", with the reasons.</li>
       </ol>
-      <div class="row"><button class="btn primary" data-act="add">Add your car</button><button class="btn" data-act="demo">Try the demo</button></div>
+      <div class="row"><button class="btn primary" data-act="add">Add your car</button><button class="btn" data-act="identify">What's that noise?</button><button class="btn" data-act="demo">Try the demo</button></div>
+      <p class="muted small"><b>What's that noise?</b> works without a baseline: record the noise and it tells you which common fault it sounds most like.</p>
       <p class="muted small">The demo uses a synthetic engine sound, so you can see how a belt squeal or a misfire shows up before recording your own car.</p>
     </div>`) + `
     <p class="muted small">A change in sound is a reason to have the car checked, not a diagnosis. Engine Ear doesn't replace a mechanic or the car's warning lights.</p>`;
@@ -738,7 +824,9 @@ async function finishRecording() {
     return;
   }
   const verdict = worst(Object.values(states).map(r => r.verdict));
-  const entry = {t: Date.now(), verdict, demoFault: v.fault, states: Object.fromEntries(Object.entries(states).map(([s, r]) => [s, {
+  await loadClassifier();
+  const top = classify(Object.values(states).flatMap(r => r.wins || []));
+  const entry = {t: Date.now(), verdict, demoFault: v.fault, likely: top ? top.slice(0, 3).map(c => ({cls: c.cls, label: c.label, p: +c.p.toFixed(3)})) : null, states: Object.fromEntries(Object.entries(states).map(([s, r]) => [s, {
     verdict: r.verdict, why: r.why || null, reasons: r.reasons || [], rpm: r.rpm ? Math.round(r.rpm) : null,
     feat: r.feat ? {scores: r.feat.scores.map(x => +x.toFixed(3)), median: +r.feat.median.toFixed(3)} : null,
     ae: r.ae ? {scores: r.ae.scores.map(x => +x.toFixed(4)), median: +r.ae.median.toFixed(4)} : null}]))};
@@ -781,6 +869,7 @@ function renderResult() {
   }).join("");
   $app.innerHTML = header("car") + `
   <div class="verdict ${e.verdict === "retry" ? "none" : e.verdict}"><span class="label">${esc(car.name)} · ${fmtDate(e.t)}${e.demoFault !== undefined && car.demo ? ` · demo: ${esc(e.demoFault || "healthy")}` : ""}</span><h1>${esc(h)}</h1><p>${esc(sub)}</p></div>
+  ${e.likely && (e.verdict === "warn" || e.verdict === "bad") ? likelyHtml(e.likely, e.verdict) : ""}
   ${blocks}
   <div class="row">${e.verdict !== "ok" && e.verdict !== "retry" && !e.markedNormal ? `<button class="btn" data-act="marknormal">It's fine, mark as normal</button>` : ""}<button class="btn primary" data-act="car">Done</button></div>
   ${e.markedNormal ? `<p class="muted small">You marked this check as normal. Its sound now counts as healthy when setting the alarm levels.</p>` : `<p class="muted small">If a mechanic confirms nothing is wrong, mark it as normal. Engine Ear then widens its idea of "healthy" a little.</p>`}`;
@@ -814,6 +903,51 @@ function renderCar(id) {
     <p class="muted small">Re-record after a repair or service that changes the sound (new belt, new exhaust), or if you change phone or phone position.</p></div>` : ""}
   <div class="row"><button class="btn danger" data-act="delete" id="delbtn">Delete this car</button></div>`;
 }
+/* ---- what's that noise? (classifier only, no baseline) */
+const GENERIC_CAR = {cylinders: 4, idleRpm: 750};
+function renderIdentify() {
+  const v = view;
+  $app.innerHTML = header("home") + `
+  <div class="panel"><h2>What's that noise?</h2>
+    <p>Record the noise for 15 seconds with the engine doing whatever makes it happen: idling, starting, or with the AC on. Hold the phone near where it comes from, away from the fan and belts.</p>
+    <div class="rec" id="recbox" hidden>
+      <div class="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="var(--line)" stroke-width="8"/><circle id="ringfg" cx="50" cy="50" r="44" fill="none" stroke="var(--accent)" stroke-width="8" stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke-linecap="round"/></svg>
+        <div class="center"><span class="big mono" id="ringtxt">15</span><span class="muted small">seconds</span></div></div>
+      <div class="lvl"><i id="lvl"></i></div></div>
+    <div id="recmsg"></div>
+    ${micBlocked ? `<button class="btn primary wide" data-act="idrec">Choose a recording</button><p class="muted small">The microphone isn't available on this page. Record at least 10 seconds with your phone's voice recorder, then choose the file.</p>`
+                 : `<button class="btn primary wide" data-act="idrec">Record 15 seconds</button>`}
+    ${safety}
+  </div>
+  ${v.top ? likelyHtml(v.top, v.top[0].cls === "normal" ? "ok" : "bad") + `<div class="panel"><h3>All results</h3><div class="meter">${v.top.map(c => `<span class="small">${esc(c.label)}</span><div class="bar"><i style="width:${(100 * c.p).toFixed(0)}%;background:var(--muted)"></i></div><span class="mono muted small">${(100 * c.p).toFixed(0)}%</span>`).join("")}</div>
+     <p class="muted small">For a reliable answer about <b>your</b> car, add it and record its healthy sound. Then checks compare against the car itself, not just against YouTube examples.</p></div>` : ""}`;
+}
+async function doIdentify() {
+  const msg = document.getElementById("recmsg");
+  document.querySelectorAll("[data-act=idrec]").forEach(b => b.disabled = true);
+  try {
+    let x;
+    if (micBlocked) x = await pickFile();
+    else {
+      document.getElementById("recbox").hidden = false;
+      const ring = document.getElementById("ringfg"), txt = document.getElementById("ringtxt"), lvl = document.getElementById("lvl");
+      x = await recordLive(TAKE_S + 1, p => { ring.style.strokeDashoffset = 276.5 * (1 - p); txt.textContent = Math.ceil((1 - p) * (TAKE_S + 1)); },
+                           r => { lvl.style.width = Math.min(100, 100 * Math.sqrt(r) * 2.2) + "%"; });
+    }
+    const q = quality(x);
+    if (q.db < -62) throw new Error("The recording is almost silent. Hold the phone closer to the noise.");
+    if (x.length < 3 * SR) throw new Error("That recording is too short. Record at least 10 seconds.");
+    if (!(await loadClassifier())) throw new Error("The fault model couldn't load. Check your internet connection and try again.");
+    const wins = analyse(x, GENERIC_CAR, "idle");
+    view.top = classify(wins);
+    render();
+  } catch (e) {
+    if (!micBlocked && (e.name === "NotAllowedError" || e.name === "SecurityError" || e.name === "NotFoundError" || e.name === "TypeError")) { micBlocked = true; render(); return; }
+    msg.innerHTML = `<p class="note">${esc(e.message || "Recording failed. Try again.")}</p>`;
+    document.querySelectorAll("[data-act=idrec]").forEach(b => b.disabled = false);
+  }
+}
+
 /* ---- backup */
 async function exportCar(id) {
   const car = cars.find(c => c.id === id), data = JSON.stringify({app: "engine-ear", v: 1, car, model: modelOf(id)});
@@ -845,6 +979,8 @@ $app.addEventListener("click", e => {
   const a = t.dataset.act, car = view.car || cars.find(c => c.id === view.id);
   if (a === "home") go({name: "home"});
   else if (a === "add") go({name: "add"});
+  else if (a === "identify") { go({name: "identify"}); loadClassifier(); }
+  else if (a === "idrec") doIdentify();
   else if (a === "demo") addDemo();
   else if (a === "open") go({name: "car", id: t.dataset.id});
   else if (a === "car") go({name: "car", id: car.id});
@@ -868,5 +1004,6 @@ $app.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ")
 if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) micBlocked = true;
 if (hasTF()) { tf.setBackend("webgl").catch(() => tf.setBackend("cpu")); }
 render();
-window.EngineEar = {synthEngine, analyse, scoreState, trainBaseline, describe};   // for tests
+window.EngineEar = {synthEngine, analyse, scoreState, trainBaseline, describe, melWindow, loadClassifier, classify,
+  yamnetEmbedArray: async ws => { await loadClassifier(); const t = yamnetEmbed(ws.map(w => Float32Array.from(w))); const a = await t.array(); t.dispose(); return a; }};   // for tests
 </script>

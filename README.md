@@ -25,6 +25,8 @@ A phone web app that learns what **your** car engine sounds like when it's healt
    - "Idle speed is higher than usual (850 vs 760 rpm)"
 5. **On another day, while the car is fine,** tap *Add a healthy recording* once. Alarm levels set from two different days give far fewer false alarms.
 
+**What's that noise?** works without a baseline. Record the noise, and a model trained on YouTube examples of 8 common faults says what it sounds most like. Faults covered: belt squeal, engine knock, valve tick, misfire/rough idle, exhaust leak, start-up rattle, alternator/pump/pulley whine and starting problems. When a check of a car with a baseline comes out different, the same model adds a "sounds most like" hint. The right fault is in its top 3 about 60% of the time on videos it never heard (`docs/EXPERIMENTS.md`), so treat it as a hint for the mechanic.
+
 **Try the demo** first. It uses a synthetic engine, so you can see how a belt squeal, a misfire or a weak cylinder shows up.
 
 **Safety:** parked on level ground, handbrake on, in Park or Neutral, outdoors or with the garage open. Keep away from the fan and belts.
@@ -67,6 +69,14 @@ modules/thermal.py       coolant-temperature backstop (overheating, not warming 
 tools/train_anomaly.py   fit a car baseline from a folder of recordings (+ optional OBD-II CSV)
 tests/test_anomaly.py    Python tests on synthetic engines
 tests/e2e_web.mjs        browser test of the web app using its demo engine
+tests/test_web_parity.py, tests/test_yamnet_parity.py   browser vs Python feature checks
+modules/web_features.py  numpy copy of the browser's log-mel front end
+modules/yamnet_embed.py  YAMNet embeddings with the browser's exact maths
+docs/models/             YAMNet weights (float16, Apache-2.0, Google) + fault head, loaded by the app
+models/yamnet/           official YAMNet float TFLite (source of the web weights) + class map
+tools/select_car_videos.py, tools/build_car_dataset.py, tools/train_yamnet_head.py
+                         YouTube fault dataset -> classifier (tools/windows/*.bat run yt-dlp on a PC)
+docs/EXPERIMENTS.md      classifier results and limits
 ```
 
 The Python side is for fleets, mechanics and experiments. It can use extra inputs from an OBD-II app: rpm, coolant temperature and voltage. The web app needs none of it.
@@ -90,9 +100,16 @@ python -m pytest tests/test_anomaly.py -q
 npm i playwright && node tests/e2e_web.mjs     # demo baseline + healthy/squeal/misfire/weak checks
 ```
 
+## Rebuild the fault classifier
+
+1. On a Windows PC with internet, run `tools/windows/search_car_videos.bat`. Then run `python tools/select_car_videos.py` to pick the videos.
+2. Run `tools/windows/download_car_audio.bat` on the PC, then copy its `raw_audio` folder to `data/raw_audio/`.
+3. Run `python tools/build_car_dataset.py`, then `python tools/train_yamnet_head.py`. This writes `docs/models/fault_classifier.json`.
+
 ## Limits
 
 - **Not validated on real faulty cars yet.** The demo and tests use synthetic sounds. Real checks across several cars, healthy and faulty, are the next step.
+- **The fault classifier learned from YouTube.** Its labels are noisy, and 23% balanced accuracy over 9 classes is a hint, not a diagnosis. See `docs/EXPERIMENTS.md`.
 - **Hybrids** may switch the engine off at idle. Hold it running (for example with the AC on) or skip idle checks.
 - **Phone microphones differ.** Keep one baseline per phone and per position. Re-record after a repair that changes the sound.
 - **Storage is the phone browser's.** Baselines live in this browser's storage. Clearing site data deletes them, so use *Save a backup file*.

@@ -1,0 +1,12 @@
+normal|toyota engine idle sound
+normal|honda engine idle sound
+normal|hyundai engine idle sound
+normal|nissan engine sound idle
+normal|mitsubishi engine idle sound
+normal|diesel pickup engine idle sound
+normal|cold start engine sound car
+normal|engine bay sound idle and rev
+rough_idle|misfire sound
+rough_idle|cylinder misfire sound idle
+engine_knock|rod knock idle
+valve_tick|ticking noise engine idle
